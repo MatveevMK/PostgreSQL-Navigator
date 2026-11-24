@@ -4,5 +4,9 @@ __pycache__/
 diagnostics/
 *.log
 .env*
-data/*.xlsx
-!data/demo_*.xlsx
+*.pem
+*.key
+secrets.toml
+/data/*
+!/data/demo_первый.xlsx
+!/data/demo_второй.xlsx

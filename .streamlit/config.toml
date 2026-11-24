@@ -1,12 +1,16 @@
 [server]
 address = "127.0.0.1"
 headless = true
+enableStaticServing = true
 [browser]
 gatherUsageStats = false
 [theme]
 base = "dark"
-primaryColor = "#54e0d0"
-backgroundColor = "#171c23"
-secondaryBackgroundColor = "#252e3e"
-textColor = "#edf3fb"
+primaryColor = "#d8f87a"
+backgroundColor = "#111315"
+secondaryBackgroundColor = "#1b1e21"
+textColor = "#f4f5ef"
 font = "sans serif"
+borderColor = "#34383a"
+dataframeBorderColor = "#34383a"
+dataframeHeaderBackgroundColor = "#25292b"

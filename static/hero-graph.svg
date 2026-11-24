@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="hero-graph" viewBox="0 0 430 240" aria-hidden="true">
+            <g fill="none" stroke="#d8f87a">
+                <path d="M8 171H75Q103 171 103 145V117H155 M253 95H292Q315 95 315 72V62H345 M253 128H279Q304 128 304 154V176H325"/>
+                <rect x="155" y="74" width="98" height="74" rx="10"/>
+                <rect x="345" y="40" width="74" height="49" rx="8"/>
+                <rect x="325" y="155" width="84" height="57" rx="8"/>
+                <rect x="38" y="151" width="48" height="41" rx="7"/>
+                <path d="M169 93H236 M169 111H221 M169 128H227 M357 56H406 M357 72H391 M338 174H395 M338 194H378 M49 171H75"/>
+            </g>
+            <g fill="#d8f87a"><circle cx="155" cy="117" r="3"/><circle cx="253" cy="95" r="3"/><circle cx="253" cy="128" r="3"/><circle cx="325" cy="176" r="3"/></g>
+        </svg>

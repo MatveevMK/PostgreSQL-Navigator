@@ -14,41 +14,9 @@ from graph_engine import (
     ambiguous_pairs, column_view, join_variants, load_catalog, shortest_path, unknown_nodes,
 )
 
-st.set_page_config(page_title='PostgreSQL Navigator v5.1', layout='wide', page_icon='🗺️', initial_sidebar_state='collapsed')
-st.markdown("""<style>
-.stApp {background: radial-gradient(ellipse at 85% 15%, #44316b66, transparent 35%), radial-gradient(ellipse at 10% 80%, #087e8b44, transparent 40%), #171c23; color: #edf3fb; color-scheme: dark;}
-[data-testid="stHeader"] {background: transparent;}
-.block-container {padding-top: 2rem; padding-bottom: 1rem; max-width: 1500px;}
-h1 {font-size: 2rem !important; letter-spacing: -.045em; color: #f5f8ff !important;}
-h2,h3,h4,p,label,li {color: #edf3fb;}
-h4 {font-size: 1.05rem !important;}
-[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {color: #b5c4d7 !important;}
-[data-testid="stVerticalBlock"] {gap: .6rem;}
-[data-testid="stChatMessage"], [data-testid="stExpander"] {background: linear-gradient(120deg,#ffffff0e,#ffffff04); border: 1px solid #ffffff18; border-radius: 18px; backdrop-filter: blur(18px); box-shadow: 0 12px 30px #00000018;}
-[data-testid="stSidebar"] {background: #202733;}
-[data-baseweb="input"], [data-baseweb="textarea"], [data-baseweb="select"] > div, [data-testid="stChatInput"] {background: #252e3e !important; color: #edf3fb !important; border-color: #52627a !important; border-radius: 12px;}
-input, textarea, [data-baseweb="select"] {color: #edf3fb !important; -webkit-text-fill-color: #edf3fb !important;}
-input::placeholder, textarea::placeholder {color: #b5c4d7 !important; -webkit-text-fill-color: #b5c4d7 !important;}
-[data-baseweb="popover"], [role="listbox"], [role="option"] {background: #252e3e !important; color: #edf3fb !important;}
-[data-baseweb="tag"] {background: #354962 !important; color: #f4f8ff !important;}
-.stButton button, .stDownloadButton button {background: #2d3a4c; color: #f5f8ff; border: 1px solid #60758e; border-radius: 12px;}
-.stButton button:hover, .stDownloadButton button:hover {border-color: #42ddcf; color: #42ddcf;}
-button[kind="primary"] {background: linear-gradient(110deg,#137d80,#7044b9); border-color: #50cabb;}
-[data-baseweb="tab-list"] {gap: 1.3rem; border-bottom: 1px solid #ffffff18;}
-[data-baseweb="tab"] {color: #b5c4d7;}
-[data-baseweb="tab"][aria-selected="true"] {color: #54e0d0;}
-[data-baseweb="tab-highlight"] {background: #54e0d0;}
-code {color: #8ce6dd !important; background: #263344 !important;}
-[data-testid="stGraphVizChart"] {overflow: auto; max-height: 320px; background: #1b2330; border-radius: 14px; padding: 12px;}
-[data-testid="stGraphVizChart"] svg {max-height: 290px;}
-[data-testid="stDialog"] [role="dialog"] {width: 95vw; max-width: 1600px;}
-[data-testid="stDialog"] [data-testid="stGraphVizChart"] {max-height: 75vh; overflow: auto;}
-[data-testid="stDialog"] [data-testid="stGraphVizChart"] svg {max-height: none;}
-[data-testid="stGraphVizChart"]:fullscreen {max-height: none;}
-[data-testid="stGraphVizChart"]:fullscreen svg {max-height: none;}
-[data-testid="stBottom"] > div {background: #171c23 !important;}
-</style>""", unsafe_allow_html=True)
+st.set_page_config(page_title='PostgreSQL Navigator v5.1', layout='wide', page_icon='', initial_sidebar_state='auto')
 BASE = Path(__file__).resolve().parent
+st.html(BASE / 'navigator.css')
 
 
 @st.cache_resource(show_spinner='Читаю каталог Excel...')
@@ -102,16 +70,15 @@ def draw_diagram(nodes, links, targets, fields=()):
     global _diagram_number
     _diagram_number += 1
     diagram(nodes, links, targets, fields)
-    if st.button('⛶ Раскрыть схему', key=f'expand_diagram_{_diagram_number}'):
+    if st.button('Раскрыть схему', key=f'expand_diagram_{_diagram_number}'):
         enlarged_diagram(nodes, links, targets, fields)
 
 
 def show_route(nodes, links, targets, fields=()):
     draw_diagram(nodes, links, targets, fields)
-    st.markdown('**Связи и точные поля (из каталога):**')
-    for edge in links:
-        st.markdown(f'- `{edge.child}` ↔ `{edge.parent}`: '
-                    f'`{edge.child_column}` = `{edge.parent_column}`')
+    with st.expander('Точные поля соединений'):
+        for edge in links:
+            st.code(edge.expression, language=None)
     with st.expander('Кратность и выбор типа JOIN'):
         st.info('Кратность ? : ? — неизвестна. В каталоге нет PRIMARY KEY / UNIQUE и состава ограничений. '
                 'Названия child/parent сами по себе не доказывают 1:1 или N:1.')
@@ -152,7 +119,14 @@ def show_connections(requested, fields=(), snapshot=None):
     try:
         if snapshot is not None and snapshot.get('warning'):
             raise ValueError(snapshot['warning'])
-        variants = snapshot['routes'] if snapshot is not None else join_variants(catalog, requested, limit=4)
+        if snapshot is not None:
+            variants = snapshot['routes']
+        else:
+            route_cache = st.session_state.setdefault('route_cache', {})
+            signature = (tuple(requested), len(catalog.links), len(catalog.columns))
+            if signature not in route_cache:
+                route_cache[signature] = join_variants(catalog, requested, limit=4)
+            variants = route_cache[signature]
     except ValueError as exc:
         st.warning(str(exc))
         st.caption('Это означает, что в каталоге связей нет связного пути. '
@@ -177,60 +151,76 @@ def show_connections(requested, fields=(), snapshot=None):
 
 
 def show_analysis(result, key):
-    if result.get('keywords'):
-        with st.expander('Как нейросеть поняла вопрос'):
-            st.caption('Поисковые слова: ' + ', '.join(result['keywords']))
-            st.caption('Кандидатов по названиям и столбцам: ' + str(len(result.get('candidates', []))))
     for idx, group in enumerate(result.get('groups', [])):
-        st.markdown(f'#### {group["title"]}')
-        details, drawing = st.columns([1, 2.2], gap='large')
-        with details:
-            if group.get('why'):
-                st.write(group['why'])
-            selected = st.multiselect('Таблицы для этой схемы — можно исправить выбор модели', tables,
-                                      default=[t for t in group['tables'] if t in tables],
-                                      format_func=lambda t: f'{t} — {describe(t)[0]}', key=f'edit_{key}_{idx}')
-            chosen_fields = [f for f in group.get('fields', []) if f.rpartition('.')[0] in selected]
-            if chosen_fields:
-                st.markdown('**Предложенные моделью поля (существуют в каталоге):**')
-                for field in chosen_fields:
-                    st.write('• `' + field + '`')
-            else:
-                st.caption('Конкретные поля показателей модель не выбрала. Можно посмотреть их во вкладке «Каталог».')
-        with drawing:
-            if selected:
-                snapshots = result.get('connections', [])
-                snapshot = snapshots[idx] if selected == group['tables'] and idx < len(snapshots) else None
-                show_connections(selected, chosen_fields, snapshot=snapshot)
-            else:
-                st.info('Выбери хотя бы одну таблицу.')
-    for note in result.get('uncertainties', []):
-        st.info(note)
-    st.caption('Назначение полей — гипотеза нейросети. Таблицы и поля сверены с каталогом полей, '
-               'JOIN — со каталогом связей. Достоверность бизнес-показателей не подтверждена.')
+        st.subheader(group['title'])
+        if group.get('why'):
+            st.caption('Предположение AI: ' + group['why'])
+        with st.expander('Таблицы и подходящие поля', expanded=True):
+            selected = st.multiselect('Таблицы для схемы', tables,
+                default=group['tables'], key=f'edit_{key}_{idx}', max_selections=10)
+            for table in selected:
+                with st.container(key=f'found_{key}_{idx}_{table}'):
+                    st.markdown(f'**`{table}`**')
+                    st.caption('Подсказка по названию: ' + describe(table)[0])
+                    relevant = [f for f in group.get('fields', []) if f.rpartition('.')[0] == table]
+                    if relevant:
+                        with st.container(key=f'field_codes_{key}_{idx}_{table}'):
+                            st.code('\n'.join(relevant), language=None)
+                    st.button('Открыть в каталоге', key=f'catalog_{key}_{idx}_{table}',
+                              on_click=go, kwargs={'page':'Каталог','table':table})
+            st.button('Исследовать связи', key=f'route_{key}_{idx}', on_click=go,
+                      kwargs={'page':'Связи таблиц','targets':selected}, disabled=len(selected)<2)
+        snapshots = result.get('connections', [])
+        snapshot = snapshots[idx] if selected == group['tables'] and idx < len(snapshots) else None
+        if selected:
+            show_connections(selected, group.get('fields', []), snapshot=snapshot)
+    with st.expander('Ограничения и дополнительные сведения'):
+        for note in result.get('uncertainties', []):
+            st.info('Предположение AI: ' + note)
+        st.caption('Имена полей и связи проверены по каталогу. Бизнес-смысл и кратность требуют проверки.')
 
 
-st.title('PostgreSQL Navigator')
-st.caption('AI-поиск через локальную Ollama · проверенные схемы по каталогу · без SQL, без доступа к PostgreSQL')
-st.write(f'**{len(catalog.known)}** таблиц с описанием столбцов · **{len(catalog.links)}** связей · '
-         f'**{len(tables)}** таблиц в общем каталоге')
-with st.sidebar:
-    st.subheader('Настройки поиска')
-    include_1c = st.checkbox('Искать также в данных 1С', value=False)
-    st.caption('По умолчанию поиск использует основные данные приложения.')
-    ai_model = st.text_input('Модель Ollama', value='qwen2.5:7b', help='Должна быть установлена через ollama list')
-    ai_server = st.text_input('Адрес локальной Ollama', value='http://127.0.0.1:11434',
-                              help='Только localhost: метаданные не отправляются во внешний сервис')
-    st.caption('Запросы к Ollama выполняются только после отправки сообщения в AI-чате. '
-               'Облачные модели заблокированы.')
-    st.caption('Диагностика каждого вопроса сохраняется локально в diagnostics/*.json. '
-               'Файлы содержат вопрос и ответы модели; очистка чата их не удаляет.')
+from ui_navigation import navigation, go
+page = navigation()
+ai_model = st.session_state.get('saved_model', 'qwen2.5:7b')
+ai_server = st.session_state.get('saved_server', 'http://127.0.0.1:11434')
+include_1c = st.session_state.get('saved_include_1c', False)
 
-tab_chat, tab_multi, tab_pair, tab_catalog = st.tabs([
-    '💬 AI-чат · Ollama', '🧩 Несколько таблиц', '🔗 Две таблицы', '📚 Каталог',
-])
-with tab_chat:
+if page == 'Главная':
+    st.html('''<header class="navigator-hero">
+        <div class="hero-copy">
+            <h1>Какие данные<br>вы <span>ищете?</span></h1>
+            <p>Найдите таблицы, изучите поля и соберите схему соединений.</p>
+        </div>
+        <img class="hero-graph" src="./app/static/hero-graph.svg" alt="">
+    </header>''')
+    with st.form('home_search'):
+        question = st.text_input('Опишите задачу', placeholder='Например: заказы, клиенты и позиции')
+        submit = st.form_submit_button('Найти данные', type='primary')
+    if submit and question.strip():
+        st.session_state.pending_question = question
+        st.session_state.navigate_to = 'Найти данные'
+        st.rerun()
+    st.markdown('#### Попробуйте пример')
+    examples = st.columns(3)
+    for col, example in zip(examples, ('Заказы, клиенты и позиции', 'Клиенты и их заказы', 'Количество в позициях заказа')):
+        if col.button(example, key='example_' + example, use_container_width=True):
+            st.session_state.pending_question = example
+            st.session_state.navigate_to = 'Найти данные'
+            st.rerun()
+    actions = st.columns(3)
+    for col, title, destination in zip(actions, ('Найти таблицу', 'Проверить связи', 'Открыть каталог'), ('Каталог','Связи таблиц','Каталог')):
+        if col.button(title, use_container_width=True):
+            st.session_state.navigate_to = destination
+            st.rerun()
+    a,b,c = st.columns(3)
+    a.metric('Таблиц', len(tables)); b.metric('С описанием полей', len(catalog.known)); c.metric('Проверенных связей', len(catalog.links))
+elif page == 'Найти данные':
+    st.title('Найти данные')
+
     st.caption('Опишите нужные данные — получите поля и проверенные схемы соединения.')
+    if not st.session_state.get('history_v5'):
+        st.info('Начните с задачи: например, «Заказы, клиенты и позиции». Значение бизнес-терминов модель может определить лишь предположительно.')
     if 'history_v5' not in st.session_state:
         st.session_state.history_v5 = []
     history = st.session_state.history_v5
@@ -244,6 +234,8 @@ with tab_chat:
         for i, entry in list(enumerate(history))[selected_request:selected_request + 2]:
             with st.chat_message(entry['role']):
                 st.markdown(entry['text'])
+                if entry.get('diagnostic'):
+                    st.caption(f"Выполнено за {entry['diagnostic'].get('duration_ms', 0) / 1000:.1f} с")
                 if entry.get('result'):
                     show_analysis(entry['result'], key=i)
                 if entry.get('diagnostic'):
@@ -256,13 +248,13 @@ with tab_chat:
                                            data=report_json(report),
                                            file_name=f"navigator_{report['request_id']}.json",
                                            mime='application/json', key=f"diagnostic_{report['request_id']}")
-    prompt = st.chat_input('Например: покажи заказы, цену для поставщика и цену для покупателя')
+    prompt = st.chat_input('Какие данные вам нужны?') or st.session_state.pop('pending_question', None)
     if prompt:
         st.session_state.history_v5.append({'role':'user','text':prompt})
         with st.spinner('Ollama анализирует вопрос и каталог; затем Python проверяет таблицы и JOIN...'):
             answer, report = run_request(prompt, catalog, BASE / 'diagnostics',
                                          model=ai_model, server=ai_server,
-                                         excluded_schemas=() if include_1c else ('hbpro_1c',))
+                                         excluded_schemas=() if include_1c else ('integration_1c',))
             if answer is not None:
                 new_item = {'role':'assistant','text':'Нашёл таблицы и поля-кандидаты. '
                             'Ниже схемы соединения и ограничения:', 'result':answer}
@@ -275,50 +267,104 @@ with tab_chat:
         st.session_state.history_v5 = []
         st.rerun()
 
-with tab_multi:
-    st.write('Ручной выбор 2–10 таблиц. Никакие нестандартные JOIN не добавляются.')
-    defaults = [t for t in ('orders.orders', 'dictionary.hotel', 'dictionary.country') if t in tables]
-    chosen = st.multiselect('Выбери таблицы', tables, default=defaults,
-                            format_func=lambda t: f'{t} — {describe(t)[0]}', key='multi')
-    if st.button('Построить варианты JOIN', type='primary'):
-        show_connections(chosen)
-
-with tab_pair:
-    c1, c2 = st.columns(2)
-    with c1:
-        a = st.selectbox('Первая таблица', tables, index=tables.index('orders.orders') if 'orders.orders' in tables else 0)
-    with c2:
-        b = st.selectbox('Вторая таблица', tables, index=tables.index('dictionary.hotel') if 'dictionary.hotel' in tables else min(1, len(tables) - 1))
-    if st.button('Найти соединения', key='pair'):
-        if a == b:
-            st.warning('Выбери разные таблицы.')
-        elif shortest_path(catalog, a, b) is None:
-            st.warning('В каталоге не найден подтверждённый путь.')
-        else:
-            show_connections([a, b])
-
-with tab_catalog:
-    target = st.selectbox('Таблица', tables, format_func=lambda t: f'{t} — {describe(t)[0]}')
-    hint, source = describe(target)
-    st.caption(f'Подсказка: {hint} ({source}). Описание может быть предположением.')
-    cols = column_view(catalog, target)
-    if cols.empty:
-        st.warning('Таблица есть в связях, но отсутствует в файле описаний столбцов.')
+elif page == 'Связи таблиц':
+    st.title('Связи таблиц')
+    st.caption('Выберите от 2 до 10 таблиц. Покажем доступные пути и точные поля соединения.')
+    chosen = st.multiselect('Таблицы', tables, default=st.session_state.get('route_targets', []), key='route_selection', max_selections=10)
+    st.caption(f'Выбрано {len(chosen)} из 10. ' + ('Добавьте ещё таблицу для поиска связей.' if len(chosen) < 2 else 'Можно искать связи.'))
+    if st.button('Найти связи', type='primary', disabled=len(chosen) < 2):
+        st.session_state.route_targets = chosen
+    requested = st.session_state.get('route_targets', [])
+    if requested:
+        st.caption('Результат для: ' + ', '.join(requested))
+        show_connections(requested)
     else:
-        search = st.text_input('Поиск столбца', key='column_search')
-        view = cols.copy()
-        view['Комментарий'] = 'Описание пока не добавлено'
-        comment_columns = [c for c in ('comment', 'column_comment', 'description') if c in view.columns]
-        if comment_columns:
-            view['Комментарий'] = view[comment_columns[0]]
-        def related(column):
-            return '; '.join(e.expression for e in catalog.links
-                             if (e.child == target and e.child_column == column)
-                             or (e.parent == target and e.parent_column == column)) or 'Связи не указаны'
-        view['Связи поля'] = view['column_name'].map(related)
-        if search:
-            view = view[view.column_name.str.contains(search, case=False, regex=False)]
-        st.dataframe(view[['column_name','data_type','is_nullable','Комментарий','Связи поля']].rename(
-            columns={'column_name':'Столбец','data_type':'Тип','is_nullable':'Может быть пустым'}),
-            hide_index=True, use_container_width=True)
-        st.caption('В колонке «Связи поля» показано, с какими полями других таблиц оно соединяется.')
+        st.info('Начните с двух таблиц, связь между которыми хотите проверить.')
+elif page == 'Каталог':
+    st.title('Каталог')
+
+    left, right = st.columns([1, 2.5], gap='large')
+    with left:
+        if st.session_state.pop('reset_catalog_query', False):
+            st.session_state.catalog_query = ''
+            st.session_state.catalog_schema = 'Все схемы'
+        query = st.text_input('Найти таблицу', key='catalog_query')
+        schema = st.selectbox('Схема', ['Все схемы'] + sorted({t.split('.')[0] for t in tables}), key='catalog_schema')
+        available = [t for t in tables if query.lower() in t.lower() and (schema == 'Все схемы' or t.split('.')[0] == schema)]
+        if not available:
+            st.info('Таблицы не найдены. Измените поиск.')
+            st.stop()
+        preferred = st.session_state.get('catalog_target')
+        target = st.selectbox('Таблицы', available, index=available.index(preferred) if preferred in available else 0)
+        st.session_state.catalog_target = target
+    with right:
+        st.subheader(f'`{target}`')
+        st.code(target, language=None)
+
+        hint, source = describe(target)
+        st.caption(f'Подсказка: {hint} ({source}). Описание может быть предположением.')
+        cols = column_view(catalog, target)
+        if cols.empty:
+            st.warning('Таблица есть в связях, но отсутствует в файле описаний столбцов.')
+        else:
+            search = st.text_input('Поиск столбца', key='column_search')
+            view = cols.copy()
+            view['Комментарий'] = ''
+            comment_columns = [c for c in ('comment', 'column_comment', 'description') if c in view.columns]
+            if comment_columns:
+                view['Комментарий'] = view[comment_columns[0]]
+            def related(column):
+                return sum(1 for e in catalog.links
+                                 if (e.child == target and e.child_column == column)
+                                 or (e.parent == target and e.parent_column == column))
+            view['Связи поля'] = view['column_name'].map(related)
+            if search:
+                view = view[view.column_name.str.contains(search, case=False, regex=False)]
+            fields_view = view[['column_name', 'data_type', 'is_nullable', 'Комментарий', 'Связи поля']].rename(
+                columns={'column_name': 'Столбец', 'data_type': 'Тип', 'is_nullable': 'Может быть пустым'})
+            nullable_styles = {'YES': 'color: #d8f87a; background-color: #2a3425',
+                               'NO': 'color: #a0dfd4; background-color: #1e302d'}
+            st.dataframe(fields_view.style.map(
+                lambda value: nullable_styles.get(str(value).upper(), ''), subset=['Может быть пустым']),
+                hide_index=True, use_container_width=True)
+            st.caption('Число в колонке «Связи поля» — количество подтверждённых связей. Условия приведены ниже.')
+        st.caption('Пустое описание означает, что комментарий к полю пока отсутствует. Название поля можно скопировать из блока ниже.')
+        with st.expander('Названия полей для копирования'):
+            for name in cols.column_name:
+                st.code(target + '.' + name, language=None)
+        with st.expander('Связанные таблицы', expanded=True):
+            for other, link_id in catalog.adjacency.get(target, []):
+                st.code(catalog.links[link_id].expression, language=None)
+                if st.button(other, key=f'catalog_link_{target}_{link_id}_{other}'):
+                    st.session_state.catalog_target = other
+                    st.session_state.reset_catalog_query = True
+                    st.rerun()
+elif page == 'Настройки':
+    st.title('Настройки')
+    with st.container(key='settings_model'):
+        st.subheader('Локальная AI-модель')
+        model_value = st.text_input('Локальная модель', value=ai_model, key='model_setting')
+        st.session_state.saved_model = model_value
+        server_value = st.text_input('Адрес Ollama', value=ai_server, key='server_setting')
+        st.session_state.saved_server = server_value
+    with st.container(key='settings_sources'):
+        st.subheader('Источники данных')
+        st.session_state.saved_include_1c = st.toggle('Включать данные 1С в AI-поиск', value=include_1c, key='include_1c_setting')
+        st.caption('Включает таблицы 1С и пути через них. Основные данные доступны при выключенном переключателе.')
+    with st.container(key='settings_connection'):
+        st.subheader('Состояние соединения')
+        if st.button('Проверить соединение'):
+            from urllib.request import urlopen
+            from ai_engine import check_local_server
+            try:
+                with urlopen(check_local_server(server_value) + '/api/tags', timeout=3) as response:
+                    models = json.load(response)
+                installed = [m['name'] for m in models.get('models', [])]
+                if model_value in installed:
+                    st.session_state.ollama_status = 'Ollama доступна · модель установлена'
+                    st.success(st.session_state.ollama_status)
+                else:
+                    st.warning('Ollama доступна, но выбранная модель не найдена.')
+            except Exception as exc:
+                st.session_state.ollama_status = 'Ollama недоступна'
+                st.error('Ollama недоступна. Запустите Ollama и проверьте локальный адрес. Затем повторите проверку.')
